@@ -260,7 +260,8 @@
   .pr-close-btn:active { background: var(--accent-hover); }
   .confetti {
     position: absolute; width: 8px; height: 8px; top: 0;
-    animation: confettiDrop 2.5s linear forwards;
+    pointer-events: none;
+    animation: confettiDrop 2s linear forwards;
   }
 
   /* PR badge in history list */
@@ -917,9 +918,9 @@ function renderPROverlay() {
 
   // Confetti
   var colors = ["#ff5722", "#0066ff", "#ff6b6b", "#4ecdc4", "#ffd93d", "#a78bfa", "#34d399"];
-  for (var i = 0; i < 24; i++) {
+  for (var i = 0; i < 14; i++) {
     var left = Math.floor(Math.random() * 100);
-    var delay = Math.floor(Math.random() * 800);
+    var delay = Math.floor(Math.random() * 600);
     var color = colors[i % colors.length];
     var size = 6 + Math.floor(Math.random() * 8);
     html += '<div class="confetti" style="left:' + left + '%;background:' + color + ';width:' + size + 'px;height:' + size + 'px;animation-delay:' + delay + 'ms"></div>';
@@ -1972,6 +1973,15 @@ load();
   persistBadges();
 })();
 render();
+
+// PR祝福画像を起動時に先読みデコードしておく（初回PR時のヒッチ回避）
+(function () {
+  try {
+    var pre = new Image();
+    pre.src = HERO_IMG;
+    if (pre.decode) { pre.decode().catch(function () {}); }
+  } catch (e) {}
+})();
 </script>
 </body>
 </html>
