@@ -1,4 +1,4 @@
-# 鍛錬 / Kintore — Training Log
+# キントレ / Kintore — Training Log
 
 iPhone のホーム画面から起動できる、シンプルなフリーウェイト・トレーニング記録アプリ。
 バックエンド不要、依存パッケージなし、`index.html` 1ファイルで完結します。
