@@ -263,6 +263,24 @@
     pointer-events: none;
     animation: confettiDrop 2s linear forwards;
   }
+  /* タップで演出をスキップ */
+  .pr-overlay.pr-skip, .pr-overlay.pr-skip .pr-card { animation: none; }
+  .pr-overlay.pr-skip .confetti, .pr-overlay.pr-skip .pr-skip-hint { display: none; }
+  .pr-skip-hint {
+    margin-top: 14px; font-size: 11px; color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.2em; font-weight: 700;
+  }
+
+  /* Post-workout TIPS overlay */
+  .tip-card {
+    background: #ffffff; border: 1px solid var(--border);
+    border-radius: 20px; padding: 28px 24px; max-width: 360px; width: 100%;
+    text-align: left; box-shadow: 0 12px 40px rgba(10, 14, 26, 0.25);
+    animation: slideUp 220ms ease-out both;
+  }
+  .tip-eyebrow { font-size: 11px; color: var(--accent); letter-spacing: 0.3em; font-weight: 700; margin-bottom: 10px; }
+  .tip-title { font-size: 18px; font-weight: 900; color: var(--text); margin-bottom: 10px; line-height: 1.4; }
+  .tip-body { font-size: 14px; color: #374151; line-height: 1.7; margin-bottom: 22px; }
 
   /* PR badge in history list */
   .pr-mini {
@@ -822,8 +840,71 @@ var state = {
   metric: "max",
   unlockedBadges: {},     // { badgeId: ISOdateUnlocked }
   recentlyUnlocked: {},   // { badgeId: true } — shown with NEW tag, cleared on view
-  prCelebration: null     // { prs: [...] } when overlay should show
+  prCelebration: null,    // { prs: [...] } when overlay should show
+  tip: null               // { t, b } post-workout tip when overlay should show
 };
+
+// トレーニング終了後に表示するTIPS（部位別 + 共通）
+var TIPS = {
+  general: [
+    { t: "筋肉は寝ている間に育つ", b: "トレーニングで傷ついた筋肉は睡眠中に回復します。7〜9時間の睡眠を目安にしましょう。" },
+    { t: "タンパク質はこまめに", b: "1日あたり体重1kgにつき1.6g前後が目安。1回でまとめて摂るより、3〜4回の食事に分けるのが効率的です。" },
+    { t: "記録は最強の武器", b: "前回より重量か回数を少しだけ上げる「漸進性過負荷」が成長の基本。今日の記録が次回の目標になります。" },
+    { t: "同じ部位は休ませる", b: "鍛えた部位は48〜72時間ほど空けると回復しやすくなります。部位を分けて回すのがおすすめ。" },
+    { t: "重量よりフォーム", b: "可動域いっぱいに、コントロールして動かすことが効かせるコツ。反動で上げた重量は筋肉に乗りません。" },
+    { t: "たまには軽い週を", b: "4〜8週ごとに重量やセット数を落とす「ディロード週」を入れると、疲労が抜けて再び伸びやすくなります。" },
+    { t: "水分補給を忘れずに", b: "汗で失った水分はパフォーマンス低下の原因に。トレーニング後もコップ1〜2杯の水を飲みましょう。" }
+  ],
+  chest: [
+    { t: "肩甲骨を寄せて押す", b: "ベンチ系は肩甲骨を寄せて下げたまま押すと、肩への負担が減り胸にしっかり効きます。" },
+    { t: "胸の上部も狙おう", b: "インクライン（ベンチ角度30°前後）の種目を入れると、胸の上部まで厚みが出ます。" }
+  ],
+  back: [
+    { t: "腕ではなく肘で引く", b: "ロウやプルダウンは「手で引く」より「肘を引く」意識で。腕の疲れが減り、背中に効きます。" },
+    { t: "引き切って一瞬止める", b: "胸を張って引き切った位置で1秒止めると、背中の収縮をしっかり感じられます。" }
+  ],
+  shoulders: [
+    { t: "サイドレイズは軽めでOK", b: "肩をすくめず、反動を使わずに上げられる重量で。高回数でも十分に効きます。" }
+  ],
+  arms: [
+    { t: "肘の位置を固定する", b: "カールやプレスダウンは肘を体の横に固定すると、狙った筋肉だけに負荷が集中します。" },
+    { t: "下ろす動作をゆっくり", b: "下ろす局面（エキセントリック）を2〜3秒かけると、同じ重量でも刺激が大きくなります。" }
+  ],
+  legs: [
+    { t: "膝とつま先を揃える", b: "スクワットやランジは膝とつま先の向きを揃えると、膝を痛めにくくなります。" },
+    { t: "脚の日はしっかり食べる", b: "大きな筋肉を使う脚トレは消耗が大きめ。トレーニング後は炭水化物とタンパク質を一緒に摂りましょう。" }
+  ],
+  core: [
+    { t: "力を入れる時に吐く", b: "体幹種目は縮める動作で息を吐くと、腹筋の収縮が強まります。息を止め続けないように。" }
+  ],
+  bodyweight: [
+    { t: "自重でも負荷は上げられる", b: "回数が楽になったら、テンポを遅くする・片側で行う・角度を変えるなどで強度を上げましょう。" }
+  ],
+  cable: [
+    { t: "戻す動作もコントロール", b: "ケーブルは常に張力がかかるのが長所。戻すときも重りに引っ張られず、ゆっくり耐えましょう。" }
+  ]
+};
+var LAST_TIP_KEY = "kintore:lastTip";
+
+function pickTip(exercises) {
+  var pool = TIPS.general.slice();
+  var seen = {};
+  exercises.forEach(function (e) {
+    var keys = [e.category];
+    if (e.cable) keys.push("cable");
+    if (e.bw) keys.push("bodyweight");
+    keys.forEach(function (k) {
+      if (TIPS[k] && !seen[k]) { seen[k] = true; pool = pool.concat(TIPS[k], TIPS[k]); }  // 部位別は出やすく
+    });
+  });
+  var last = null;
+  try { last = localStorage.getItem(LAST_TIP_KEY); } catch (e) {}
+  var candidates = pool.filter(function (tip) { return tip.t !== last; });
+  if (!candidates.length) candidates = pool;
+  var tip = candidates[Math.floor(Math.random() * candidates.length)];
+  try { localStorage.setItem(LAST_TIP_KEY, tip.t); } catch (e) {}
+  return tip;
+}
 
 // 種目名の変更（旧名 → 新名）。保存済み・インポートの記録にも適用する
 var RENAMED_EXERCISES = { "ケーブルプッシュダウン": "ケーブルプレスダウン" };
@@ -921,14 +1002,14 @@ function toast(msg) {
 }
 
 function render() {
-  var html = renderHeader() + '<main>' + renderTab() + '</main>' + renderTabbar() + renderSheet() + renderPROverlay();
+  var html = renderHeader() + '<main>' + renderTab() + '</main>' + renderTabbar() + renderSheet() + renderPROverlay() + renderTipOverlay();
   document.getElementById("app").innerHTML = html;
 }
 
 function renderPROverlay() {
   if (!state.prCelebration) return "";
   var prs = state.prCelebration.prs;
-  var html = '<div class="pr-overlay" data-action="closePR">';
+  var html = '<div class="pr-overlay' + (state.prCelebration.skipped ? ' pr-skip' : '') + '" data-action="prTap">';
 
   // Confetti
   var colors = ["#ff5722", "#0066ff", "#ff6b6b", "#4ecdc4", "#ffd93d", "#a78bfa", "#34d399"];
@@ -940,7 +1021,7 @@ function renderPROverlay() {
     html += '<div class="confetti" style="left:' + left + '%;background:' + color + ';width:' + size + 'px;height:' + size + 'px;animation-delay:' + delay + 'ms"></div>';
   }
 
-  html += '<div class="pr-card" onclick="event.stopPropagation()">' +
+  html += '<div class="pr-card">' +
     '<img class="pr-hero" src="' + HERO_IMG + '" alt="">' +
     '<div class="pr-eyebrow">PERSONAL RECORD</div>' +
     '<div class="pr-title">PR 更新！</div>' +
@@ -961,9 +1042,23 @@ function renderPROverlay() {
 
   html += '</div>' +
     '<button class="pr-close-btn display" data-action="closePR">続ける</button>' +
-  '</div></div>';
+  '</div>' +
+  '<div class="pr-skip-hint">タップでスキップ</div>' +
+  '</div>';
 
   return html;
+}
+
+function renderTipOverlay() {
+  if (!state.tip || state.prCelebration) return "";
+  return '<div class="pr-overlay" data-action="closeTip">' +
+    '<div class="tip-card">' +
+      '<div class="tip-eyebrow">TODAY\'S TIPS</div>' +
+      '<div class="tip-title">' + esc(state.tip.t) + '</div>' +
+      '<div class="tip-body">' + esc(state.tip.b) + '</div>' +
+      '<button class="pr-close-btn display" data-action="closeTip">閉じる</button>' +
+    '</div>' +
+  '</div>';
 }
 
 function renderHeader() {
@@ -1725,9 +1820,12 @@ function save() {
 
   state.draft = { date: todayISO(), exercises: [], notes: "" };
 
+  // PR演出のあと（PRがなければすぐ）にTIPSを表示
+  state.tip = pickTip(cleaned);
+
   // Show PR celebration if any (priority over tab switch)
   if (prs.length) {
-    state.prCelebration = { prs: prs, pendingBadges: newBadges };
+    state.prCelebration = { prs: prs, pendingBadges: newBadges, shownAt: Date.now() };
     render();
     return;
   }
@@ -1740,6 +1838,25 @@ function save() {
   } else {
     toast("記録を保存しました");
   }
+}
+
+// 演出中（紙吹雪が降り終わるまで）のタップはスキップ、終わった後のタップは閉じる
+var PR_ANIM_MS = 2600;
+function prTap() {
+  var c = state.prCelebration;
+  if (!c) return;
+  if (!c.skipped && Date.now() - c.shownAt < PR_ANIM_MS) {
+    c.skipped = true;
+    var el = document.querySelector(".pr-overlay");
+    if (el) el.classList.add("pr-skip");
+    return;
+  }
+  closePR();
+}
+
+function closeTip() {
+  state.tip = null;
+  render();
 }
 
 function closePR() {
@@ -1918,6 +2035,8 @@ document.addEventListener("click", function (e) {
   else if (a === "removeEx") removeEx(parseInt(t.getAttribute("data-i"), 10));
   else if (a === "save") save();
   else if (a === "closePR") closePR();
+  else if (a === "prTap") prTap();
+  else if (a === "closeTip") closeTip();
   else if (a === "toggleSession") toggleSession(t.getAttribute("data-id"));
   else if (a === "deleteSession") deleteSession(t.getAttribute("data-id"));
   else if (a === "selectExercise") selectExercise(t.getAttribute("data-name"));
