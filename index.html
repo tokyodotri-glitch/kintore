@@ -392,7 +392,7 @@ var LIB = {
     { name: "キックバック" },
     { name: "ケーブルカール", cable: true },
     { name: "ロープカール", cable: true },
-    { name: "ケーブルプッシュダウン", cable: true },
+    { name: "ケーブルプレスダウン", cable: true },
     { name: "ロープエクステンション", cable: true },
     { name: "オーバーヘッドケーブルエクステンション", cable: true },
     { name: "ナロープッシュアップ", bw: true },
@@ -463,7 +463,7 @@ var LIB = {
     { name: "ケーブルアップライトロウ", cable: true },
     { name: "ケーブルカール", cable: true },
     { name: "ロープカール", cable: true },
-    { name: "ケーブルプッシュダウン", cable: true },
+    { name: "ケーブルプレスダウン", cable: true },
     { name: "ロープエクステンション", cable: true },
     { name: "オーバーヘッドケーブルエクステンション", cable: true },
     { name: "ケーブルキックバック", cable: true },
@@ -825,10 +825,24 @@ var state = {
   prCelebration: null     // { prs: [...] } when overlay should show
 };
 
+// 種目名の変更（旧名 → 新名）。保存済み・インポートの記録にも適用する
+var RENAMED_EXERCISES = { "ケーブルプッシュダウン": "ケーブルプレスダウン" };
+
+function migrateExerciseNames(workouts) {
+  var changed = false;
+  workouts.forEach(function (w) {
+    (w.exercises || []).forEach(function (e) {
+      if (RENAMED_EXERCISES[e.name]) { e.name = RENAMED_EXERCISES[e.name]; changed = true; }
+    });
+  });
+  return changed;
+}
+
 function load() {
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
     if (raw) state.workouts = JSON.parse(raw);
+    if (migrateExerciseNames(state.workouts)) persist();
   } catch (e) {}
   try {
     var braw = localStorage.getItem(BADGE_KEY);
@@ -1854,6 +1868,7 @@ function importJson(file) {
     try {
       var data = JSON.parse(e.target.result);
       if (!Array.isArray(data)) { toast("不正なファイル形式"); return; }
+      migrateExerciseNames(data);
       var existingIds = {};
       state.workouts.forEach(function (w) { existingIds[w.id] = true; });
       var added = 0;
