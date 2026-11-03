@@ -271,6 +271,47 @@
     letter-spacing: 0.2em; font-weight: 700;
   }
 
+  /* Goal (target weight + deadline) on progress tab */
+  .goal-add {
+    width: 100%; margin-top: 4px; padding: 14px; background: transparent;
+    border: 1px dashed var(--border-strong); border-radius: 12px;
+    color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: 0.1em;
+  }
+  .goal-card {
+    margin-top: 4px; background: #ffffff; border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(10, 14, 26, 0.04);
+  }
+  .goal-card.achieved { border-color: #10b981; background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%); }
+  .goal-card.overdue { border-color: #f87171; }
+  .goal-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .goal-eyebrow { font-size: 9px; color: #10b981; letter-spacing: 0.2em; font-weight: 700; }
+  .goal-headline { font-size: 18px; color: var(--text); margin-top: 4px; }
+  .goal-headline b { font-size: 24px; font-weight: 900; }
+  .goal-done { font-weight: 900; color: #10b981; }
+  .goal-edit {
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 8px; padding: 6px 12px; font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .goal-bar { height: 8px; background: var(--surface); border-radius: 999px; overflow: hidden; margin: 12px 0 8px; }
+  .goal-bar-fill { height: 100%; background: #10b981; border-radius: 999px; }
+  .goal-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+  .goal-overdue { color: #ef4444; font-weight: 700; }
+  .goal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .goal-field { display: block; min-width: 0; }
+  .goal-field .input { padding: 10px 12px; }
+  .goal-field-label { display: block; font-size: 10px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+  .goal-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .goal-btn {
+    flex: 1; padding: 12px; background: #10b981; color: #ffffff; border: none;
+    border-radius: 10px; font-size: 13px; font-weight: 700; letter-spacing: 0.1em;
+  }
+  .goal-btn.ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+  .goal-delete {
+    display: block; margin: 12px auto 0; background: none; border: none;
+    color: #ef4444; font-size: 12px; font-weight: 700;
+  }
+  .pr-goal { margin-top: 6px; font-size: 11px; font-weight: 900; color: #10b981; letter-spacing: 0.1em; }
+
   /* Post-workout TIPS overlay */
   .tip-card {
     background: #ffffff; border: 1px solid var(--border);
@@ -355,6 +396,7 @@
 
 var STORAGE_KEY = "workouts:all_v1";
 var BADGE_KEY = "badges:unlocked_v1";
+var GOAL_KEY = "goals:v1";
 
 var LIB = {
   chest:      { label: "胸",   code: "CHEST",  color: "#ff6b6b", items: [
@@ -825,8 +867,21 @@ function todayISO() {
   return d.toISOString().slice(0, 10);
 }
 
+function addDaysISO(iso, days) {
+  var p = iso.split("-");
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + days));
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(fromISO, toISO) {
+  var a = fromISO.split("-"), b = toISO.split("-");
+  return Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 86400000);
+}
+
 var state = {
   workouts: [],
+  goals: {},              // { exerciseName: { weight, deadline: "YYYY-MM-DD" | "", achievedAt? } }
+  goalEditing: false,
   tab: "record",
   draft: { date: todayISO(), exercises: [], notes: "" },
   expandedId: null,
@@ -929,6 +984,36 @@ function load() {
     var braw = localStorage.getItem(BADGE_KEY);
     if (braw) state.unlockedBadges = JSON.parse(braw);
   } catch (e) {}
+  try {
+    var graw = localStorage.getItem(GOAL_KEY);
+    if (graw) state.goals = JSON.parse(graw);
+    var renamed = false;
+    Object.keys(RENAMED_EXERCISES).forEach(function (oldName) {
+      if (state.goals[oldName] && !state.goals[RENAMED_EXERCISES[oldName]]) {
+        state.goals[RENAMED_EXERCISES[oldName]] = state.goals[oldName];
+        delete state.goals[oldName];
+        renamed = true;
+      }
+    });
+    if (renamed) persistGoals();
+  } catch (e) {}
+}
+
+function persistGoals() {
+  try { localStorage.setItem(GOAL_KEY, JSON.stringify(state.goals)); }
+  catch (e) { toast("保存に失敗しました"); }
+}
+
+// 種目の自己ベスト重量（全記録の最大セット重量）
+function bestWeightFor(name) {
+  var best = 0;
+  state.workouts.forEach(function (w) {
+    w.exercises.forEach(function (e) {
+      if (e.name !== name) return;
+      e.sets.forEach(function (s) { if ((s.weight || 0) > best) best = s.weight || 0; });
+    });
+  });
+  return best;
 }
 
 function persist() {
@@ -1037,6 +1122,7 @@ function renderPROverlay() {
         '<span class="pr-new">' + pr.newBest + unit + '</span>' +
         '<span class="pr-new-label">NEW</span>' +
       '</div>' +
+      (pr.goalHit ? '<div class="pr-goal">🎯 目標達成！</div>' : '') +
     '</div>';
   });
 
@@ -1367,13 +1453,73 @@ function renderProgress() {
       }).join("") +
     '</div>' +
     stats +
-    '<div class="chart-wrap">' + renderChart(points, m, info.unit) + '</div>' +
+    (isBwExercise ? '' : renderGoalCard(sel)) +
+    '<div class="chart-wrap">' + renderChart(points, m, info.unit, (!isBwExercise && m !== "volume" && state.goals[sel]) ? state.goals[sel].weight : null) + '</div>' +
     '<div class="metric-desc">' + info.desc + '</div>' +
   '</div>';
   return html;
 }
 
-function renderChart(points, metric, unit) {
+function renderGoalCard(name) {
+  var goal = state.goals[name];
+  var best = bestWeightFor(name);
+
+  if (state.goalEditing) {
+    var defDeadline = goal ? goal.deadline : addDaysISO(todayISO(), 56);
+    return '<div class="goal-card">' +
+      '<div class="goal-eyebrow">GOAL 設定</div>' +
+      '<div class="goal-form">' +
+        '<label class="goal-field"><span class="goal-field-label">目標重量（kg）</span>' +
+          '<input class="input" id="goalWeight" type="number" inputmode="decimal" placeholder="' + (best ? best + 5 : 60) + '" value="' + (goal ? esc(goal.weight) : '') + '"></label>' +
+        '<label class="goal-field"><span class="goal-field-label">目標期限</span>' +
+          '<input class="input" id="goalDeadline" type="date" value="' + esc(defDeadline || '') + '"></label>' +
+      '</div>' +
+      '<div class="goal-actions">' +
+        '<button class="goal-btn ghost display" data-action="cancelGoal">キャンセル</button>' +
+        '<button class="goal-btn display" data-action="saveGoal" data-name="' + esc(name) + '">保存</button>' +
+      '</div>' +
+      (goal ? '<button class="goal-delete display" data-action="deleteGoal" data-name="' + esc(name) + '">目標を削除</button>' : '') +
+    '</div>';
+  }
+
+  if (!goal) {
+    return '<button class="goal-add display" data-action="editGoal">+ 目標重量・期限を設定</button>';
+  }
+
+  var achieved = !!goal.achievedAt || best >= goal.weight;
+  var pct = Math.max(0, Math.min(100, Math.round(best / goal.weight * 100)));
+  var remain = Math.round((goal.weight - best) * 10) / 10;
+  var deadlineTxt = "";
+  var overdue = false;
+  if (goal.deadline) {
+    var left = daysBetween(todayISO(), goal.deadline);
+    overdue = !achieved && left < 0;
+    var fd = fmtDate(goal.deadline);
+    deadlineTxt = '期限 ' + fd.y + '/' + fd.m + '/' + fd.d +
+      (achieved ? '' : left > 0 ? '（あと' + left + '日）' : left === 0 ? '（今日まで）' : '（' + (-left) + '日超過）');
+  }
+
+  var headline = achieved
+    ? '<span class="goal-done">目標達成！</span>'
+    : 'あと <b>' + remain + '</b> kg';
+
+  return '<div class="goal-card' + (achieved ? ' achieved' : overdue ? ' overdue' : '') + '">' +
+    '<div class="goal-top">' +
+      '<div>' +
+        '<div class="goal-eyebrow">GOAL ' + goal.weight + ' kg</div>' +
+        '<div class="goal-headline">' + headline + '</div>' +
+      '</div>' +
+      '<button class="goal-edit display" data-action="editGoal">編集</button>' +
+    '</div>' +
+    '<div class="goal-bar"><div class="goal-bar-fill" style="width:' + pct + '%"></div></div>' +
+    '<div class="goal-meta">' +
+      '<span>ベスト ' + best + ' kg（' + pct + '%）</span>' +
+      (deadlineTxt ? '<span class="' + (overdue ? 'goal-overdue' : '') + '">' + deadlineTxt + '</span>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function renderChart(points, metric, unit, goalValue) {
   if (points.length < 2) {
     return '<div class="chart-empty">グラフ表示には2回以上の記録が必要です<br>（現在 ' + points.length + ' 回）</div>';
   }
@@ -1385,6 +1531,7 @@ function renderChart(points, metric, unit) {
   var vals = points.map(function (p) { return p[metric]; });
   var minV = Math.min.apply(null, vals);
   var maxV = Math.max.apply(null, vals);
+  if (goalValue) { minV = Math.min(minV, goalValue); maxV = Math.max(maxV, goalValue); }  // 目標ラインも収める
   if (minV === maxV) { minV -= 1; maxV += 1; }
   var range = maxV - minV;
   var yMin = Math.max(0, minV - range * 0.1);
@@ -1424,6 +1571,11 @@ function renderChart(points, metric, unit) {
     svg += '<line x1="' + padL + '" y1="' + t.y + '" x2="' + (W - padR) + '" y2="' + t.y + '" stroke="#e0e3e9" stroke-dasharray="2 4"></line>';
     svg += '<text x="' + (padL - 6) + '" y="' + (t.y + 3) + '" text-anchor="end" font-size="10" fill="#6b7280" font-family="SF Mono, monospace">' + t.v + '</text>';
   });
+  if (goalValue) {
+    var gy = padT + innerH - ((goalValue - yMin) / (yMax - yMin)) * innerH;
+    svg += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="#10b981" stroke-width="1.5" stroke-dasharray="6 4"></line>';
+    svg += '<text x="' + (W - padR) + '" y="' + (gy - 5) + '" text-anchor="end" font-size="10" font-weight="700" fill="#10b981" font-family="SF Mono, monospace">GOAL ' + goalValue + '</text>';
+  }
   svg += '<path d="' + path + '" fill="none" stroke="#ff5722" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>';
   xy.forEach(function (q) {
     svg += '<circle cx="' + q.x + '" cy="' + q.y + '" r="3.5" fill="#ff5722"></circle>';
@@ -1694,6 +1846,7 @@ function setTab(tab) {
     state.recentlyUnlocked = {};
   }
   state.tab = tab;
+  state.goalEditing = false;
   render();
 }
 function openPicker() {
@@ -1818,6 +1971,10 @@ function save() {
   // Check badges
   var newBadges = checkBadges();
 
+  // 目標達成チェック（PR演出に表示、PRがなければトースト）
+  var goalHits = checkGoals(newWorkout);
+  prs.forEach(function (p) { if (goalHits.indexOf(p.name) >= 0) p.goalHit = true; });
+
   state.draft = { date: todayISO(), exercises: [], notes: "" };
 
   // PR演出のあと（PRがなければすぐ）にTIPSを表示
@@ -1833,7 +1990,9 @@ function save() {
   state.tab = "history";
   render();
 
-  if (newBadges.length) {
+  if (goalHits.length) {
+    toast("🎯 目標達成: " + goalHits[0] + (goalHits.length > 1 ? " 他" + (goalHits.length - 1) + "件" : ""));
+  } else if (newBadges.length) {
     toast("🏅 新バッジ: " + newBadges[0].name + (newBadges.length > 1 ? " 他" + (newBadges.length - 1) + "件" : ""));
   } else {
     toast("記録を保存しました");
@@ -1884,7 +2043,47 @@ function deleteSession(id) {
   toast("記録を削除しました");
 }
 
-function selectExercise(name) { state.selectedExercise = name; render(); }
+function selectExercise(name) { state.selectedExercise = name; state.goalEditing = false; render(); }
+
+function editGoal() { state.goalEditing = true; render(); }
+function cancelGoal() { state.goalEditing = false; render(); }
+
+function saveGoal(name) {
+  var w = parseFloat((document.getElementById("goalWeight") || {}).value);
+  var deadline = (document.getElementById("goalDeadline") || {}).value || "";
+  if (!(w > 0)) { toast("目標重量を入力してください"); return; }
+  var goal = { weight: w, deadline: deadline, setAt: todayISO() };
+  // すでにベストが目標以上なら、設定時点で達成扱い
+  if (bestWeightFor(name) >= w) goal.achievedAt = todayISO();
+  state.goals[name] = goal;
+  persistGoals();
+  state.goalEditing = false;
+  render();
+  toast(goal.achievedAt ? "🎯 すでに目標達成済みです" : "目標を設定しました");
+}
+
+function deleteGoal(name) {
+  if (!confirm("この目標を削除しますか？")) return;
+  delete state.goals[name];
+  persistGoals();
+  state.goalEditing = false;
+  render();
+  toast("目標を削除しました");
+}
+
+// 保存した記録で新たに達成した目標の種目名を返す（達成日を記録する）
+function checkGoals(workout) {
+  var hits = [];
+  workout.exercises.forEach(function (e) {
+    var g = state.goals[e.name];
+    if (!g || g.achievedAt) return;
+    var maxW = 0;
+    e.sets.forEach(function (s) { if ((s.weight || 0) > maxW) maxW = s.weight || 0; });
+    if (maxW >= g.weight) { g.achievedAt = workout.date; hits.push(e.name); }
+  });
+  if (hits.length) persistGoals();
+  return hits;
+}
 function setMetric(m) { state.metric = m; render(); }
 
 function copyNotion() {
@@ -2037,6 +2236,10 @@ document.addEventListener("click", function (e) {
   else if (a === "closePR") closePR();
   else if (a === "prTap") prTap();
   else if (a === "closeTip") closeTip();
+  else if (a === "editGoal") editGoal();
+  else if (a === "cancelGoal") cancelGoal();
+  else if (a === "saveGoal") saveGoal(t.getAttribute("data-name"));
+  else if (a === "deleteGoal") deleteGoal(t.getAttribute("data-name"));
   else if (a === "toggleSession") toggleSession(t.getAttribute("data-id"));
   else if (a === "deleteSession") deleteSession(t.getAttribute("data-id"));
   else if (a === "selectExercise") selectExercise(t.getAttribute("data-name"));
